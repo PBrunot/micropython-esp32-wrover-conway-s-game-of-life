@@ -1,141 +1,117 @@
-import machine
-import esp32
-# ssd1306 library from
-# https://github.com/micropython/micropython/blob/master/drivers/display/ssd1306.py
-# file dated 2020-03-29
-import ssd1306
-import uos
-import utime
+# Install nano-gui and ili93xx driver first
+# import mip
+# mip.install("github:peterhinch/micropython-nano-gui")
+# mip.install("github:peterhinch/micropython-nano-gui/drivers/ili93xx")
 
-i2c = machine.I2C(scl=machine.Pin(4), sda=machine.Pin(5))
-oled = ssd1306.SSD1306_I2C(128,64, i2c)
-oled.fill(0)
-oled.show()
+from color_setup import ssd
+from gui.core.colors import *  # Standard color constants
+import os
+import time
+
+ssd.fill(0)
+ssd.show()
 
 class Life:
-    def __init__(self,rows,cols):
-        self.rows=rows
-        self.cols=cols
-        self.iterations=0
-        #init blank array
-        start=utime.ticks_ms()
-        self.arr1=[[0 for i in range(cols)] for j in range(rows)]
-        self.arr2=[[0 for i in range(cols)] for j in range(rows)]
-        end=utime.ticks_ms()
-        print("time to init blank array:\t" + str(end-start) + " ms")
-        #init random
-        start=utime.ticks_ms()
-        for i in range(self.rows):
-            for j in range(self.cols):
-                tmp=int.from_bytes(uos.urandom(1),'little')
-                #192/256 chance of being 0
-                if tmp < 192:
-                    self.arr1[i][j]=0
+    def __init__(self, rows, cols, px_size, offset_y):
+        self.rows = rows
+        self.cols = cols
+        self.iterations = 0
+        self.alive = 0
+        self.offset_y = offset_y
+        self.px_size = px_size
+        # init blank array
+        start = time.ticks_ms()
+        self.arr1 = [[0 for i in range(cols + 2)] for j in range(rows + 2)]
+        self.arr2 = [[0 for i in range(cols + 2)] for j in range(rows + 2)]
+        end = time.ticks_ms()
+        print("time to init blank array:\t" + str(end - start) + " ms")
+        # init random
+        start = time.ticks_ms()
+        for i in range(1, self.rows + 1):
+            for j in range(1, self.cols + 1):
+                tmp = int.from_bytes(os.urandom(1), "little")
+                # 192/256 chance of being 0
+                if tmp < 230:
+                    self.arr1[i][j] = 0
                 else:
-                    self.arr1[i][j]=1
-        end=utime.ticks_ms()
-        print("time to init random array:\t" + str(end-start) + " ms")
+                    self.arr1[i][j] = 1
+        end = time.ticks_ms()
+        print("time to init random array:\t" + str(end - start) + " ms")
 
     def printarr2(self):
-        #print arr2 to console
-        start=utime.ticks_ms()
+        # print arr2 to console
+        start = time.ticks_ms()
         print("arr2")
         for i in range(self.rows):
             for j in range(self.cols):
-                if self.arr2[i][j]==0:
-                    print('.',end='')
+                if self.arr2[i][j] == 0:
+                    print(".", end="")
                 else:
-                    print('#',end='')
+                    print("#", end="")
             print()
-        end=utime.ticks_ms()
-        print("time to print to console:\t" + str(end-start) + " ms")
+        end = time.ticks_ms()
+        print("time to print to console:\t" + str(end - start) + " ms")
 
+    @micropython.native
     def process_next(self):
-        #9 sections, 3x3 split from 2d array, n=neighbors, avoids cpu time on bounds check this way
-        self.iterations+=1
+        self.iterations += 1
         print("iteration:\t" + str(self.iterations))
-        start=utime.ticks_ms()
-        n=0
-        n=(self.arr1[0][1]+self.arr1[1][0]+self.arr1[1][1])
-        if (self.arr1[0][0])==1 and (n < 2) or (n > 3):
-            self.arr2[0][0]=0
-        if (self.arr1[0][0]==0) and (n==3):
-            self.arr2[0][0]=1
+        start = time.ticks_ms()
 
-        for j in range(1, self.cols-1):
-            n=(self.arr1[0][j-1]+self.arr1[0][j+1]+self.arr1[1][j-1]+self.arr1[1][j]+self.arr1[1][j+1])
-            if (self.arr1[0][j])==1 and (n < 2) or (n > 3):
-                self.arr2[0][j]=0
-            if (self.arr1[0][j]==0) and (n==3):
-                self.arr2[0][j]=1    
+        for i in range(1, self.rows):
+            for j in range(1, self.cols):
+                n = (
+                    self.arr1[i - 1][j - 1]
+                    + self.arr1[i - 1][j]
+                    + self.arr1[i - 1][j + 1]
+                    + self.arr1[i][j - 1]
+                    + self.arr1[i][j + 1]
+                    + self.arr1[i + 1][j - 1]
+                    + self.arr1[i + 1][j]
+                    + self.arr1[i + 1][j + 1]
+                )
+                if (self.arr1[i][j]) == 1 and ((n < 2) or (n > 3)):
+                    self.arr2[i][j] = 0
+                if (self.arr1[i][j] == 0) and (n == 3):
+                    self.arr2[i][j] = 1
 
-        n=(self.arr1[0][self.cols-2]+self.arr1[1][self.cols-2]+self.arr1[1][self.cols-1])
-        if (self.arr1[0][self.cols-1])==1 and (n < 2) or (n > 3):
-            self.arr2[0][self.cols-1]=0
-        if (self.arr1[0][self.cols-1]==0) and (n==3):
-            self.arr2[0][self.cols-1]=1
+        end = time.ticks_ms()
+        print("time to process next iteration:\t" + str(end - start) + " ms")
 
-        for i in range(1, self.rows-1):
-            n=(self.arr1[i-1][0]+self.arr1[i-1][1]+self.arr1[i][1]+self.arr1[i+1][1]+self.arr1[i+1][0])
-            if (self.arr1[i][0])==1 and (n < 2) or (n > 3):
-                self.arr2[i][0]=0
-            if (self.arr1[i][0]==0) and (n==3):
-                self.arr2[i][0]=1
-
-        for i in range(1, self.rows-1):
-            for j in range(1, self.cols-1):
-                n=(self.arr1[i-1][j-1]+self.arr1[i-1][j]+self.arr1[i-1][j+1]+self.arr1[i][j-1]+self.arr1[i][j+1]+self.arr1[i+1][j-1]+self.arr1[i+1][j]+self.arr1[i+1][j+1])
-                if (self.arr1[i][j])==1 and (n < 2) or (n > 3):
-                    self.arr2[i][j]=0
-                if (self.arr1[i][j]==0) and (n==3):
-                    self.arr2[i][j]=1
-
-        for i in range(1, self.rows-1):
-            n=(self.arr1[i-1][self.cols-2]+self.arr1[i-1][self.cols-1]+self.arr1[i][self.cols-2]+self.arr1[i+1][self.cols-2]+self.arr1[i+1][self.cols-1])
-            if (self.arr1[i][self.cols-1])==1 and (n < 2) or (n > 3):
-                self.arr2[i][self.cols-1]=0
-            if (self.arr1[i][self.cols-1]==0) and (n==3):
-                self.arr2[i][self.cols-1]=0
-
-        n=(self.arr1[self.rows-2][0]+self.arr1[self.rows-2][1]+self.arr1[self.rows-1][1])
-        if (self.arr1[self.rows-1][0])==1 and (n < 2) or (n > 3):
-            self.arr2[self.rows-1][0]=0
-        if (self.arr1[self.rows-1][0]==0) and (n==3):
-            self.arr2[self.rows-1][0]=1
-
-        for j in range(1, self.cols-1):
-            n=0
-            n=(self.arr1[self.rows-2][j-1]+self.arr1[self.rows-2][j]+self.arr1[1][j-2]+self.arr1[self.rows-1][j-1]+self.arr1[self.rows-1][j+1])
-            if (self.arr1[self.rows-1][j])==1 and (n < 2) or (n > 3):
-                self.arr2[self.rows-1][j]=0
-            if (self.arr1[self.rows-1][j]==0) and (n==3):
-                self.arr2[self.rows-1][j]=1
-
-        n=(self.arr1[self.rows-2][self.cols-2]+self.arr1[self.rows-1][self.cols-1]+self.arr1[self.rows-1][self.cols-2])
-        if (self.arr1[self.rows-1][self.cols-1])==1 and (n < 2) or (n > 3):
-            self.arr2[self.rows-1][self.cols-1]=0
-        if (self.arr1[self.rows-1][self.cols-1]==0) and (n==3):
-            self.arr2[self.rows-1][self.cols-1]=1
-        end=utime.ticks_ms()
-        print("time to process next iteration:\t" + str(end-start) + " ms")    
-        #end of neighbor processing step
-
+    @micropython.native
     def copy(self):
-        #copy back to arr1 and to oled buffer
-        start=utime.ticks_ms()
-        for i in range(self.rows):
-            for j in range(self.cols):
-                self.arr1[i][j]=self.arr2[i][j]
-                oled.pixel(j,i,self.arr1[i][j])
+        # copy back to arr1 and to oled buffer
+        start = time.ticks_ms()
+        self.arr2 = self.arr1
+        self.alive = 0
+        ssd.fill(0)
+        for i in range(1, self.rows + 1):
+            for j in range(1, self.cols + 1):
+                if self.arr1[i][j]:
+                    ssd.rect(
+                        (j - 1) * self.px_size,
+                        (i - 1) * self.px_size + self.offset_y,
+                        self.px_size,
+                        self.px_size,
+                        1,
+                        True,
+                    )
+                    self.alive += 1
+        end = time.ticks_ms()
+        print("time to copy back and to oled buffer:\t" + str(end - start) + " ms")
 
-        end=utime.ticks_ms()
-        print("time to copy back and to oled buffer:\t" + str(end-start) + " ms")
 
-#"main" function
-life=Life(64,128)
-while True:    
+# "main" function
+SIZE = 5
+OFFSET_Y = 10
+GRID_H = 240 // SIZE
+GRID_W = 320 // SIZE
+life = Life(GRID_H, GRID_W, SIZE, OFFSET_Y)
+
+while True:
     life.process_next()
-    #life.printarr2()
     life.copy()
-    oled.show()
-
+    ssd.text(f"Gen={life.iterations}", 0, 0, RED)
+    ssd.text("GAME OF LIFE", 100, 0, YELLOW)
+    ssd.text(f"Vivi={life.alive}", 240, 0, BLUE)
+    ssd.show()
